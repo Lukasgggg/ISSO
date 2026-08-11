@@ -8,64 +8,68 @@ on:
 jobs:
   build-iso:
     runs-on: ubuntu-latest
+    container:
+      image: debian:bookworm
+      options: --privileged
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Software-Pakete installieren
         run: |
-          sudo apt-get update
-          sudo apt-get install -y live-build debootstrap debian-archive-keyring
+          apt-get update
+          apt-get install -y live-build debootstrap debian-archive-keyring wget ca-certificates systemd
 
       - name: Build Kiosk Live ISO
         run: |
           mkdir -p kiosk_build
           cd kiosk_build
           
-          sudo lb config \
+          lb config \
             --architectures amd64 \
             --distribution bookworm \
             --archive-areas "main contrib non-free non-free-firmware" \
             --binary-images iso-hybrid
           
-          sudo mkdir -p config/package-lists
-          echo "openbox nodm chromium xbindkeys zenity network-manager lxterminal wget sudo firmware-linux firmware-iwlwifi" | sudo tee config/package-lists/kiosk.list.chroot
+          mkdir -p config/package-lists
+          echo "openbox nodm chromium xbindkeys zenity network-manager lxterminal wget sudo firmware-linux firmware-iwlwifi" > config/package-lists/kiosk.list.chroot
           
-          sudo mkdir -p config/includes.chroot/etc/default/
-          printf "NODM_ENABLED=true\nNODM_USER=kiosk\nNODM_MIN_SESSION_TIME=60\nNODM_XSESSION=/etc/X11/Xsession\n" | sudo tee config/includes.chroot/etc/default/nodm
+          mkdir -p config/includes.chroot/etc/default/
+          printf "NODM_ENABLED=true\nNODM_USER=kiosk\nNODM_MIN_SESSION_TIME=60\nNODM_XSESSION=/etc/X11/Xsession\n" > config/includes.chroot/etc/default/nodm
           
-          sudo mkdir -p config/includes.chroot/etc/skel/.config/openbox
-          sudo bash -c 'cat << "EOF" > config/includes.chroot/etc/skel/.config/openbox/autostart
+          mkdir -p config/includes.chroot/etc/skel/.config/openbox
+          cat << 'EOF' > config/includes.chroot/etc/skel/.config/openbox/autostart
           #!/bin/bash
           xset -dpms; xset s off; xset s noblank
           [ ! -f ~/.kiosk-url ] && echo "https://tipslinz.netlify.app" > ~/.kiosk-url
           xbindkeys &
           wget -q --spider http://google.com || lxterminal -e nmtui
           chromium --kiosk --no-first-run --disable-restore-session-state $(cat ~/.kiosk-url) &
-          EOF'
-          sudo chmod +x config/includes.chroot/etc/skel/.config/openbox/autostart
+          EOF
+          chmod +x config/includes.chroot/etc/skel/.config/openbox/autostart
 
-          echo "exec openbox-session" | sudo tee config/includes.chroot/etc/skel/.xsession
+          echo "exec openbox-session" > config/includes.chroot/etc/skel/.xsession
 
-          sudo bash -c 'cat << "EOF" > config/includes.chroot/etc/skel/.xbindkeysrc
+          cat << 'EOF' > config/includes.chroot/etc/skel/.xbindkeysrc
           "systemctl poweroff"
             alt + Return
           "killall chromium && sleep 1 && chromium --kiosk --no-first-run --disable-restore-session-state $(cat ~/.kiosk-url) &"
             alt + r
           "lxterminal -e nmtui && zenity --entry --title=\"Setup\" --text=\"URL:\" --entry-text=$(cat ~/.kiosk-url) > ~/.kiosk-url && killall chromium && chromium --kiosk --no-first-run --disable-restore-session-state $(cat ~/.kiosk-url) &"
             Mod5 + 0
-          EOF'
+          EOF
 
-          sudo mkdir -p config/hooks/live
-          sudo bash -c 'cat << "EOF" > config/hooks/live/0100-user.hook.chroot
+          mkdir -p config/hooks/live
+          cat << 'EOF' > config/hooks/live/0100-user.hook.chroot
           #!/bin/sh
           useradd -m -s /bin/bash kiosk
           cp -r /etc/skel/. /home/kiosk/
           chown -R kiosk:kiosk /home/kiosk
-          EOF'
-          sudo chmod +x config/hooks/live/0100-user.hook.chroot
+          EOF
+          chmod +x config/hooks/live/0100-user.hook.chroot
 
-          sudo lb build
+          lb build
 
       - name: ISO als Download bereitstellen
         uses: actions/upload-artifact@v4

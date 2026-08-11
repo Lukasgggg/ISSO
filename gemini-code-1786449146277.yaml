@@ -1,0 +1,66 @@
+name: Build Kiosk ISO
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Build Kiosk Live ISO
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y live-build
+          
+          mkdir -p kiosk_build && cd kiosk_build
+          lb config --architectures amd64 --distribution bookworm --archive-areas "main contrib non-free non-free-firmware" --binary-images iso-hybrid
+          
+          mkdir -p config/package-lists
+          echo "openbox nodm chromium xbindkeys zenity network-manager lxterminal wget sudo firmware-linux firmware-iwlwifi" > config/package-lists/kiosk.list.chroot
+          
+          mkdir -p config/includes.chroot/etc/default/
+          printf "NODM_ENABLED=true\nNODM_USER=kiosk\nNODM_MIN_SESSION_TIME=60\nNODM_XSESSION=/etc/X11/Xsession\n" > config/includes.chroot/etc/default/nodm
+          
+          mkdir -p config/includes.chroot/etc/skel/.config/openbox
+          cat << 'EOF' > config/includes.chroot/etc/skel/.config/openbox/autostart
+          #!/bin/bash
+          xset -dpms; xset s off; xset s noblank
+          [ ! -f ~/.kiosk-url ] && echo "https://tipslinz.netlify.app" > ~/.kiosk-url
+          xbindkeys &
+          wget -q --spider http://google.com || lxterminal -e nmtui
+          chromium --kiosk --no-first-run --disable-restore-session-state $(cat ~/.kiosk-url) &
+          EOF
+          chmod +x config/includes.chroot/etc/skel/.config/openbox/autostart
+
+          echo "exec openbox-session" > config/includes.chroot/etc/skel/.xsession
+
+          cat << 'EOF' > config/includes.chroot/etc/skel/.xbindkeysrc
+          "systemctl poweroff"
+            alt + Return
+          "killall chromium && sleep 1 && chromium --kiosk --no-first-run --disable-restore-session-state $(cat ~/.kiosk-url) &"
+            alt + r
+          "lxterminal -e nmtui && zenity --entry --title='Setup' --text='URL:' --entry-text=$(cat ~/.kiosk-url) > ~/.kiosk-url && killall chromium && chromium --kiosk --no-first-run --disable-restore-session-state $(cat ~/.kiosk-url) &"
+            Mod5 + 0
+          EOF
+
+          mkdir -p config/hooks/live
+          cat << 'EOF' > config/hooks/live/0100-user.hook.chroot
+          #!/bin/sh
+          useradd -m -s /bin/bash kiosk
+          cp -r /etc/skel/. /home/kiosk/
+          chown -R kiosk:kiosk /home/kiosk
+          EOF
+          chmod +x config/hooks/live/0100-user.hook.chroot
+
+          sudo lb build
+
+      - name: ISO als Download bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: TipsLinz-Kiosk-ISO
+          path: kiosk_build/*.iso

@@ -25,18 +25,37 @@ jobs:
         run: |
           mkdir -p kiosk_build
           cd kiosk_build
-          
+
+          # 1. Grundkonfiguration inkl. Firmware-Repos
           lb config \
             --architectures amd64 \
             --distribution bookworm \
+            --archive-areas "main contrib non-free non-free-firmware" \
+            --parent-archive-areas "main contrib non-free non-free-firmware" \
             --binary-images iso-hybrid
-          
+
+          # 2. Pakete definieren (nur Standard-Pakete ohne problematische Metapakete)
           mkdir -p config/package-lists
-          echo "openbox nodm chromium xbindkeys zenity network-manager lxterminal wget sudo firmware-linux firmware-iwlwifi" > config/package-lists/kiosk.list.chroot
-          
-          mkdir -p config/includes.chroot/etc/default/
-          printf "NODM_ENABLED=true\nNODM_USER=kiosk\nNODM_MIN_SESSION_TIME=60\nNODM_XSESSION=/etc/X11/Xsession\n" > config/includes.chroot/etc/default/nodm
-          
+          cat << 'EOF' > config/package-lists/kiosk.list.chroot
+          openbox
+          nodm
+          chromium
+          xbindkeys
+          zenity
+          network-manager
+          lxterminal
+          wget
+          sudo
+          EOF
+
+          # 3. Auto-Login einrichten
+          mkdir -p config/includes.chroot/etc/default
+          echo 'NODM_ENABLED=true' > config/includes.chroot/etc/default/nodm
+          echo 'NODM_USER=kiosk' >> config/includes.chroot/etc/default/nodm
+          echo 'NODM_MIN_SESSION_TIME=60' >> config/includes.chroot/etc/default/nodm
+          echo 'NODM_XSESSION=/etc/X11/Xsession' >> config/includes.chroot/etc/default/nodm
+
+          # 4. Kiosk-Autostart einrichten
           mkdir -p config/includes.chroot/etc/skel/.config/openbox
           cat << 'EOF' > config/includes.chroot/etc/skel/.config/openbox/autostart
           #!/bin/bash
@@ -50,6 +69,7 @@ jobs:
 
           echo "exec openbox-session" > config/includes.chroot/etc/skel/.xsession
 
+          # 5. Tastatur-Shortcuts
           cat << 'EOF' > config/includes.chroot/etc/skel/.xbindkeysrc
           "systemctl poweroff"
             alt + Return
@@ -59,6 +79,7 @@ jobs:
             Mod5 + 0
           EOF
 
+          # 6. Benutzer anlegen
           mkdir -p config/hooks/live
           cat << 'EOF' > config/hooks/live/0100-user.hook.chroot
           #!/bin/sh
@@ -68,6 +89,7 @@ jobs:
           EOF
           chmod +x config/hooks/live/0100-user.hook.chroot
 
+          # 7. ISO bauen
           lb build
 
       - name: ISO als Download bereitstellen

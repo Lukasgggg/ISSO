@@ -19,7 +19,21 @@ jobs:
       - name: Software-Pakete installieren
         run: |
           apt-get update
-          apt-get install -y live-build debootstrap debian-archive-keyring wget ca-certificates systemd
+          apt-get install -y \
+            live-build \
+            debootstrap \
+            debian-archive-keyring \
+            isolinux \
+            syslinux-utils \
+            grub-pc-bin \
+            grub-efi-amd64-bin \
+            mtools \
+            dosfstools \
+            xorriso \
+            squashfs-tools \
+            wget \
+            ca-certificates \
+            systemd
 
       - name: Build Kiosk Live ISO
         run: |
@@ -30,7 +44,9 @@ jobs:
             --architectures amd64 \
             --distribution bookworm \
             --archive-areas "main contrib non-free non-free-firmware" \
-            --binary-images iso-hybrid
+            --binary-images iso-hybrid \
+            --bootloaders "isolinux,grub-efi" \
+            --grub-recovery-configurations false
           
           mkdir -p config/package-lists
           echo "openbox nodm chromium xbindkeys zenity network-manager lxterminal wget sudo firmware-linux firmware-iwlwifi" > config/package-lists/kiosk.list.chroot
